@@ -113,7 +113,7 @@ if prompt := st.chat_input("Tulis argumen, ide, atau pertanyaanmu..."):
         with st.spinner("Sedang menganalisis..."):
             try:
                 response = client.models.generate_content(
-                    model='gemini-2.5-flash',
+                    model='gemini-3.6-flash',
                     contents="\n\n".join(formatted_contents),
                     config=types.GenerateContentConfig(
                         system_instruction=SYSTEM_INSTRUCTION,
