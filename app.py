@@ -5,18 +5,15 @@ from google import genai
 from google.genai import types
 from pypdf import PdfReader
 
-# Load API Key dari file .env
+# Load API Key (Mendukung lokal .env dan Streamlit Cloud Secrets)
 load_dotenv()
 api_key = os.getenv("GEMINI_API_KEY")
 
-# Konfigurasi Halaman Streamlit
-st.set_page_config(page_title="Private AI Workspace", page_icon="🧠", layout="centered")
-st.title("🧠 Private AI Discussion Space")
-st.caption("Mitra berpikir kritis, Socratic Mentor & Pembahas Materi Kuliah.")
+if not api_key and "GEMINI_API_KEY" in st.secrets:
+    api_key = st.secrets["GEMINI_API_KEY"]
 
-# Inisialisasi Klien Gemini
 if not api_key:
-    st.error("API Key belum ditemukan! Pastikan file .env sudah dibuat dan diisi.")
+    st.error("API Key belum ditemukan! Periksa file .env (lokal) atau Secrets (Streamlit Cloud).")
     st.stop()
 
 client = genai.Client(api_key=api_key)
@@ -134,7 +131,7 @@ if prompt := st.chat_input("Tulis argumen, ide, atau pertanyaanmu di sini..."):
     with st.chat_message("assistant"):
         with st.spinner("Sedang menganalisis materi & argumenmu..."):
             response = client.models.generate_content(
-                model='gemini-2.5-flash',
+                model='gemini-1.5-flash',
                 contents=contents,
                 config=types.GenerateContentConfig(
                     system_instruction=SYSTEM_INSTRUCTION,
@@ -145,4 +142,3 @@ if prompt := st.chat_input("Tulis argumen, ide, atau pertanyaanmu di sini..."):
             st.markdown(response.text)
     
     # Simpan respon AI ke riwayat
-    st.session_state.messages.append({"role": "assistant", "content": response.text})
