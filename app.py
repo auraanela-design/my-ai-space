@@ -5,7 +5,7 @@ from google import genai
 from google.genai import types
 from pypdf import PdfReader
 
-# Load API Key (Mendukung lokal .env dan Streamlit Cloud Secrets)
+# Load API Key (Lokal .env & Streamlit Secrets)
 load_dotenv()
 api_key = os.getenv("GEMINI_API_KEY")
 
@@ -13,43 +13,47 @@ if not api_key and "GEMINI_API_KEY" in st.secrets:
     api_key = st.secrets["GEMINI_API_KEY"]
 
 if not api_key:
-    st.error("API Key belum ditemukan! Periksa file .env (lokal) atau Secrets (Streamlit Cloud).")
+    st.error("API Key belum ditemukan! Periksa file .env atau Secrets.")
     st.stop()
 
 client = genai.Client(api_key=api_key)
 
-# Inisialisasi Session State untuk Dokumen
+# Inisialisasi Session State
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 if "doc_context" not in st.session_state:
     st.session_state.doc_context = ""
 if "doc_name" not in st.session_state:
     st.session_state.doc_name = None
 
-# --- PANEL SAMPING (SIDEBAR) ---
+# Config Halaman
+st.set_page_config(page_title="Private AI Workspace", page_icon="🧠", layout="centered")
+st.title("🧠 Private AI Discussion Space")
+st.caption("Mitra berpikir kritis, Socratic Mentor & Pembahas Materi Kuliah.")
+
+# --- SIDEBAR ---
 with st.sidebar:
     st.header("⚙️ Pengaturan AI")
-    # Tombol Toggle Web Search
     enable_web_search = st.toggle("🔍 Aktifkan Web Search", value=True)
-    st.caption("Jika aktif, AI bisa mencari info/data terbaru di internet secara otomatis.")
+    st.caption("Memungkinkan AI mencari info terbaru di internet.")
     
     st.divider()
     
-    # Upload File PDF
-    st.header("📚 Materi Kuliah / Dokumen")
-    uploaded_file = st.file_uploader("Unggah PDF untuk dibahas", type=["pdf"])
+    st.header("📚 Materi Kuliah / PDF")
+    uploaded_file = st.file_uploader("Unggah PDF materi", type=["pdf"])
     
-    if uploaded_file is not None:
-        if st.session_state.doc_name != uploaded_file.name:
-            with st.spinner("Membaca dan memproses PDF..."):
-                reader = PdfReader(uploaded_file)
-                extracted_text = ""
-                for page in reader.pages:
-                    text = page.extract_text()
-                    if text:
-                        extracted_text += text + "\n"
-                
-                st.session_state.doc_context = extracted_text
-                st.session_state.doc_name = uploaded_file.name
-                st.success(f"Berhasil membaca: {uploaded_file.name}")
+    if uploaded_file is not None and st.session_state.doc_name != uploaded_file.name:
+        with st.spinner("Membaca PDF..."):
+            reader = PdfReader(uploaded_file)
+            extracted_text = ""
+            for page in reader.pages:
+                text = page.extract_text()
+                if text:
+                    extracted_text += text + "\n"
+            
+            st.session_state.doc_context = extracted_text[:20000] # Batasi max 20k karakter agar aman
+            st.session_state.doc_name = uploaded_file.name
+            st.success(f"Berhasil membaca: {uploaded_file.name}")
     
     if st.session_state.doc_name:
         st.info(f"📄 Dokumen aktif: **{st.session_state.doc_name}**")
@@ -58,7 +62,7 @@ with st.sidebar:
             st.session_state.doc_name = None
             st.rerun()
 
-# System Instruction dengan dukungan Konteks Dokumen
+# System Instruction
 SYSTEM_INSTRUCTION = """
 Kamu adalah mitra diskusi intelektual dan Socratic Mentor pribadi untuk pengguna.
 Tugas utama kamu BUKAN sekadar memberikan jawaban langsung atau mengiyakan pendapat pengguna.
@@ -66,79 +70,58 @@ Tugas utama kamu BUKAN sekadar memberikan jawaban langsung atau mengiyakan penda
 Prinsip Utama Berperilaku:
 1. Kritis & Analitis: Selalu cari celah, bias, atau asumsi yang belum teruji dari argumen pengguna.
 2. Socratic Method: Sering-seringlah mengajukan pertanyaan balik yang memicu pemikiran lebih dalam.
-3. Konstruktif: Jangan asal menyalahkan, tapi tunjukkan di mana letak ketidaktepatan logikanya.
-4. Jangan Mengekor: Jika pengguna salah atau logikanya lemah, jangan pernah berpura-pura setuju.
-5. Pembahasan Dokumen: Jika pengguna mengunggah dokumen/materi kuliah, gunakan referensi teks dokumen tersebut untuk menguji pemahaman pengguna, mengkritisi kesimpulan mereka, atau mendiskusikan materi secara mendalam.
-6. Gunakan bahasa Indonesia yang santai tapi berbobot dan lugas.
+3. Konstruktif: Tunjukkan di mana letak ketidaktepatan logikanya.
+4. Verifikasi Data: Gunakan akses pencarian web jika memerlukan data/berita/fakta terbaru.
+5. Gunakan bahasa Indonesia yang santai tapi berbobot dan lugas.
 """
 
-# Menyimpan riwayat obrolan di sesi Streamlit
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-
-# Menampilkan riwayat obrolan yang sudah ada
+# Tampilkan riwayat chat di UI
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# Input teks dari pengguna
-if prompt := st.chat_input("Tulis argumen, ide, atau pertanyaanmu di sini..."):
-    # Tampilkan pesan pengguna di UI
+# Input Teks Chat
+if prompt := st.chat_input("Tulis argumen, ide, atau pertanyaanmu..."):
+    # Tampilkan input user di UI
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # Format history untuk dikirim ke Gemini API
-    contents = []
-    
-    # Jika ada dokumen PDF yang diunggah, masukkan konteksnya di bagian awal obrolan
+    # Konstruksi struktur Percakapan
+    formatted_contents = []
+
+    # Jika ada PDF, sisipkan konteks di awal
     if st.session_state.doc_context:
-        doc_prompt = (
-            f"--- KONTEKS DOKUMEN / MATERI KULIAH ({st.session_state.doc_name}) ---\n"
-            f"{st.session_state.doc_context[:30000]}\n"  # Batasi teks agar optimal
-            f"----------------------------------------------------\n"
-            f"Gunakan dokumen di atas sebagai rujukan utama saat menjawab atau menguji logika pengguna."
-        )
-        contents.append(
-            types.Content(
-                role="user",
-                parts=[types.Part.from_text(text=doc_prompt)]
-            )
-        )
-        contents.append(
-            types.Content(
-                role="model",
-                parts=[types.Part.from_text(text=f"Saya telah membaca dokumen '{st.session_state.doc_name}'. Silakan ajukan pertanyaan atau pemahamanmu terkait materi ini untuk kita diskusikan.")]
-            )
+        formatted_contents.append(
+            f"[SISTEM: Pengguna mengunggah dokumen '{st.session_state.doc_name}'].\n"
+            f"Isi Dokumen:\n{st.session_state.doc_context}\n"
+            f"--- GUNAKAN DOKUMEN DI ATAS SEBAGAI ACUAN UTAMA ---"
         )
 
-    # Masukkan riwayat pesan
+    # Masukkan seluruh riwayat chat
     for msg in st.session_state.messages:
-        role = "user" if msg["role"] == "user" else "model"
-        contents.append(
-            types.Content(
-                role=role,
-                parts=[types.Part.from_text(text=msg["content"])]
-            )
-        )
+        prefix = "User: " if msg["role"] == "user" else "Assistant: "
+        formatted_contents.append(prefix + msg["content"])
 
-    # Konfigurasi Tools (Google Search Grounding)
+    # Konfigurasi Tools
     tools = []
     if enable_web_search:
         tools.append(types.Tool(google_search=types.GoogleSearch()))
 
-    # Menghasilkan respon AI
+    # Panggil API Gemini
     with st.chat_message("assistant"):
-        with st.spinner("Sedang menganalisis materi & argumenmu..."):
-            response = client.models.generate_content(
-                model='gemini-1.5-flash',
-                contents=contents,
-                config=types.GenerateContentConfig(
-                    system_instruction=SYSTEM_INSTRUCTION,
-                    temperature=0.7,
-                    tools=tools
+        with st.spinner("Sedang menganalisis..."):
+            try:
+                response = client.models.generate_content(
+                    model='gemini-2.5-flash',
+                    contents="\n\n".join(formatted_contents),
+                    config=types.GenerateContentConfig(
+                        system_instruction=SYSTEM_INSTRUCTION,
+                        temperature=0.7,
+                        tools=tools if tools else None
+                    )
                 )
-            )
-            st.markdown(response.text)
-    
-    # Simpan respon AI ke riwayat
+                st.markdown(response.text)
+                st.session_state.messages.append({"role": "assistant", "content": response.text})
+            except Exception as e:
+                st.error(f"Gagal memproses respon: {str(e)}")
