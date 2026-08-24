@@ -1,9 +1,13 @@
 import os
+import io
 import streamlit as st
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 from pypdf import PdfReader
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
 # Load API Key (Lokal .env & Streamlit Secrets)
 load_dotenv()
@@ -29,6 +33,41 @@ if "doc_context" not in st.session_state:
 if "doc_name" not in st.session_state:
     st.session_state.doc_name = None
 
+# Fungsi Generator PDF
+def generate_pdf(messages, doc_name=None):
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
+    styles = getSampleStyleSheet()
+    
+    # Custom Styles
+    title_style = ParagraphStyle('TitleStyle', parent=styles['Heading1'], fontSize=16, spaceAfter=12)
+    meta_style = ParagraphStyle('MetaStyle', parent=styles['Normal'], fontSize=10, textColor="gray", spaceAfter=18)
+    user_style = ParagraphStyle('UserStyle', parent=styles['Normal'], fontSize=10, leading=14, spaceAfter=8)
+    ai_style = ParagraphStyle('AIStyle', parent=styles['Normal'], fontSize=10, leading=14, spaceAfter=14)
+
+    story = []
+    story.append(Paragraph("<b>Riwayat Diskusi Socratic Mentor</b>", title_style))
+    
+    if doc_name:
+        story.append(Paragraph(f"Dokumen Referensi: {doc_name}", meta_style))
+    else:
+        story.append(Paragraph("Dokumen Referensi: Tidak ada", meta_style))
+
+    for msg in messages:
+        role = "<b>[Pengguna]:</b>" if msg["role"] == "user" else "<b>[Socratic Mentor]:</b>"
+        clean_text = msg["content"].replace("\n", "<br/>")
+        
+        if msg["role"] == "user":
+            story.append(Paragraph(f"{role}<br/>{clean_text}", user_style))
+        else:
+            story.append(Paragraph(f"{role}<br/>{clean_text}", ai_style))
+        
+        story.append(Spacer(1, 6))
+
+    doc.build(story)
+    buffer.seek(0)
+    return buffer
+
 st.title("🧠 Private AI Discussion Space")
 st.caption("Mitra berpikir kritis, Socratic Mentor & Pembahas Materi Kuliah.")
 
@@ -52,7 +91,7 @@ with st.sidebar:
                 if text:
                     extracted_text += text + "\n"
             
-            st.session_state.doc_context = extracted_text[:20000] # Maksimal 20k karakter
+            st.session_state.doc_context = extracted_text[:20000]
             st.session_state.doc_name = uploaded_file.name
             st.success(f"Berhasil membaca: {uploaded_file.name}")
     
@@ -65,30 +104,36 @@ with st.sidebar:
 
     st.divider()
 
-    # --- FITUR SIMPAN & RIWAYAT DISKUSI ---
-    st.header("💾 Simpan Riwayat Chat")
+    # --- FITUR SIMPAN & DOWNLOAD PDF ---
+    st.header("💾 Simpan Catatan (PDF/TXT)")
     if st.session_state.messages:
-        # Format teks percakapan untuk didownload
+        # 1. Tombol Download PDF
+        pdf_data = generate_pdf(st.session_state.messages, st.session_state.doc_name)
+        st.download_button(
+            label="📄 Unduh Catatan (.pdf)",
+            data=pdf_data,
+            file_name="catatan_diskusi_ai.pdf",
+            mime="application/pdf"
+        )
+
+        # 2. Tombol Download TXT (Opsional)
         chat_export = "=== RIWAYAT DISKUSI SOCRATIC MENTOR ===\n\n"
-        if st.session_state.doc_name:
-            chat_export += f"Dokumen Referensi: {st.session_state.doc_name}\n\n"
-            
         for msg in st.session_state.messages:
             role = "Pengguna" if msg["role"] == "user" else "Socratic Mentor"
             chat_export += f"[{role}]:\n{msg['content']}\n\n" + ("-"*40) + "\n\n"
 
         st.download_button(
-            label="📥 Unduh Catatan Diskusi (.txt)",
+            label="📝 Unduh Teks (.txt)",
             data=chat_export,
             file_name="riwayat_diskusi_ai.txt",
             mime="text/plain"
         )
         
-        if st.button("🗑️ Hapus Semua Riwayat Chat"):
+        if st.button("🗑️ Hapus Semua Riwayat"):
             st.session_state.messages = []
             st.rerun()
     else:
-        st.caption("Belum ada riwayat percakapan.")
+        st.caption("Belum ada percakapan untuk diunduh.")
 
 # System Instruction
 SYSTEM_INSTRUCTION = """
@@ -110,15 +155,12 @@ for message in st.session_state.messages:
 
 # Input Teks Chat
 if prompt := st.chat_input("Tulis argumen, ide, atau pertanyaanmu..."):
-    # Tampilkan input user di UI
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # Konstruksi struktur Percakapan
     formatted_contents = []
 
-    # Jika ada PDF, sisipkan konteks di awal
     if st.session_state.doc_context:
         formatted_contents.append(
             f"[SISTEM: Pengguna mengunggah dokumen '{st.session_state.doc_name}'].\n"
@@ -126,17 +168,14 @@ if prompt := st.chat_input("Tulis argumen, ide, atau pertanyaanmu..."):
             f"--- GUNAKAN DOKUMEN DI ATAS SEBAGAI ACUAN UTAMA ---"
         )
 
-    # Masukkan seluruh riwayat chat
     for msg in st.session_state.messages:
         prefix = "User: " if msg["role"] == "user" else "Assistant: "
         formatted_contents.append(prefix + msg["content"])
 
-    # Konfigurasi Tools
     tools = []
     if enable_web_search:
         tools.append(types.Tool(google_search=types.GoogleSearch()))
 
-    # Panggil API Gemini
     with st.chat_message("assistant"):
         with st.spinner("Sedang menganalisis..."):
             try:
@@ -151,6 +190,6 @@ if prompt := st.chat_input("Tulis argumen, ide, atau pertanyaanmu..."):
                 )
                 st.markdown(response.text)
                 st.session_state.messages.append({"role": "assistant", "content": response.text})
-                st.rerun() # Refresh halaman agar tombol download selalu terupdate
+                st.rerun()
             except Exception as e:
                 st.error(f"Gagal memproses respon: {str(e)}")
