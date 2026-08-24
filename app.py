@@ -18,6 +18,9 @@ if not api_key:
 
 client = genai.Client(api_key=api_key)
 
+# Config Halaman
+st.set_page_config(page_title="Private AI Workspace", page_icon="🧠", layout="centered")
+
 # Inisialisasi Session State
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -26,8 +29,6 @@ if "doc_context" not in st.session_state:
 if "doc_name" not in st.session_state:
     st.session_state.doc_name = None
 
-# Config Halaman
-st.set_page_config(page_title="Private AI Workspace", page_icon="🧠", layout="centered")
 st.title("🧠 Private AI Discussion Space")
 st.caption("Mitra berpikir kritis, Socratic Mentor & Pembahas Materi Kuliah.")
 
@@ -51,7 +52,7 @@ with st.sidebar:
                 if text:
                     extracted_text += text + "\n"
             
-            st.session_state.doc_context = extracted_text[:20000] # Batasi max 20k karakter agar aman
+            st.session_state.doc_context = extracted_text[:20000] # Maksimal 20k karakter
             st.session_state.doc_name = uploaded_file.name
             st.success(f"Berhasil membaca: {uploaded_file.name}")
     
@@ -61,6 +62,33 @@ with st.sidebar:
             st.session_state.doc_context = ""
             st.session_state.doc_name = None
             st.rerun()
+
+    st.divider()
+
+    # --- FITUR SIMPAN & RIWAYAT DISKUSI ---
+    st.header("💾 Simpan Riwayat Chat")
+    if st.session_state.messages:
+        # Format teks percakapan untuk didownload
+        chat_export = "=== RIWAYAT DISKUSI SOCRATIC MENTOR ===\n\n"
+        if st.session_state.doc_name:
+            chat_export += f"Dokumen Referensi: {st.session_state.doc_name}\n\n"
+            
+        for msg in st.session_state.messages:
+            role = "Pengguna" if msg["role"] == "user" else "Socratic Mentor"
+            chat_export += f"[{role}]:\n{msg['content']}\n\n" + ("-"*40) + "\n\n"
+
+        st.download_button(
+            label="📥 Unduh Catatan Diskusi (.txt)",
+            data=chat_export,
+            file_name="riwayat_diskusi_ai.txt",
+            mime="text/plain"
+        )
+        
+        if st.button("🗑️ Hapus Semua Riwayat Chat"):
+            st.session_state.messages = []
+            st.rerun()
+    else:
+        st.caption("Belum ada riwayat percakapan.")
 
 # System Instruction
 SYSTEM_INSTRUCTION = """
@@ -113,7 +141,7 @@ if prompt := st.chat_input("Tulis argumen, ide, atau pertanyaanmu..."):
         with st.spinner("Sedang menganalisis..."):
             try:
                 response = client.models.generate_content(
-                    model='gemini-3.6-flash',
+                    model='gemini-2.5-flash',
                     contents="\n\n".join(formatted_contents),
                     config=types.GenerateContentConfig(
                         system_instruction=SYSTEM_INSTRUCTION,
@@ -123,5 +151,6 @@ if prompt := st.chat_input("Tulis argumen, ide, atau pertanyaanmu..."):
                 )
                 st.markdown(response.text)
                 st.session_state.messages.append({"role": "assistant", "content": response.text})
+                st.rerun() # Refresh halaman agar tombol download selalu terupdate
             except Exception as e:
                 st.error(f"Gagal memproses respon: {str(e)}")
