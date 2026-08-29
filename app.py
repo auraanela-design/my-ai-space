@@ -67,10 +67,6 @@ st.caption("Mitra berpikir kritis, Socratic Mentor & Generator Dokumen PDF.")
 
 # --- SIDEBAR ---
 with st.sidebar:
-    st.header("⚙️ Pengaturan AI")
-    
-    st.divider()
-    
     st.header("📚 Materi Kuliah / PDF")
     uploaded_file = st.file_uploader("Unggah PDF materi", type=["pdf"])
     
@@ -143,20 +139,15 @@ if prompt := st.chat_input("Contoh: Buatkan aku struktur materi kuliah manajemen
         prefix = "User: " if msg["role"] == "user" else "Assistant: "
         formatted_contents.append(prefix + msg["content"])
 
-    tools = []
-    if enable_web_search:
-        tools.append(types.Tool(google_search=types.GoogleSearch()))
-
     with st.chat_message("assistant"):
         with st.spinner("Sedang menyusun respon & PDF..."):
             try:
                 response = client.models.generate_content(
-                    model='gemini-3.6-flash',
+                    model='gemini-2.5-flash',
                     contents="\n\n".join(formatted_contents),
                     config=types.GenerateContentConfig(
                         system_instruction=SYSTEM_INSTRUCTION,
-                        temperature=0.7,
-                        tools=tools if tools else None
+                        temperature=0.7
                     )
                 )
                 
