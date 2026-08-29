@@ -143,7 +143,7 @@ if prompt := st.chat_input("Contoh: Buatkan aku struktur materi kuliah manajemen
         with st.spinner("Sedang menyusun respon & PDF..."):
             try:
                 response = client.models.generate_content(
-                    model='gemini-2.5-flash',
+                    model='gemini-3.6-flash',
                     contents="\n\n".join(formatted_contents),
                     config=types.GenerateContentConfig(
                         system_instruction=SYSTEM_INSTRUCTION,
