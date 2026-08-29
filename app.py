@@ -68,7 +68,6 @@ st.caption("Mitra berpikir kritis, Socratic Mentor & Generator Dokumen PDF.")
 # --- SIDEBAR ---
 with st.sidebar:
     st.header("⚙️ Pengaturan AI")
-    enable_web_search = st.toggle("🔍 Aktifkan Web Search", value=True)
     
     st.divider()
     
