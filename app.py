@@ -140,7 +140,7 @@ if prompt := st.chat_input("Contoh: Buatkan aku struktur materi kuliah manajemen
         formatted_contents.append(prefix + msg["content"])
 
     with st.chat_message("assistant"):
-        with st.spinner("Sedang menyusun respon & PDF..."):
+        with st.spinner("Memuat..."):
             try:
                 response = client.models.generate_content(
                     model='gemini-3.6-flash',
